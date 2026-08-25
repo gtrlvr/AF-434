@@ -8,7 +8,7 @@ import time
 import serial
 from pynput import keyboard
 
-PORT = "COM3"          # Windows: "COM3" etc. | Linux: "/dev/ttyACM0" or "/dev/ttyUSB0"
+PORT = "COM6"          # Windows: "COM3" etc. | Linux: "/dev/ttyACM0" or "/dev/ttyUSB0"
 BAUD = 115200
 
 ser = serial.Serial(PORT, BAUD)
