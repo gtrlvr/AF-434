@@ -1,0 +1,114 @@
+// Y axis: one iCL42 motor controlled by an Arduino Mega 2560 (5 V).
+// D9 -> PUL+, D8 -> DIR+, Arduino GND -> PUL- and DIR- (same as X motor 1).
+// Leave ENA+/- unconnected, as in the working X-axis setup.
+// Separate supply: 24 V DC -> VCC, supply negative -> motor power GND.
+// Keyboard bridge: y_axis_keyboard.py (Up/Down arrows, Q/E speed, Esc quit).
+// Standalone sketch: uploading this replaces the X-axis sketch on one Mega.
+// Serial: u = up, j = down, s = stop, q/e = speed +/-, h = heartbeat.
+// ? = report firmware version and Arduino DIR output state.
+
+const int MOTOR_PUL_PIN = 9;
+const int MOTOR_DIR_PIN = 8;
+
+// Swap these two levels if Up moves down with your mounting/SW5 setting.
+const int UP_DIR_LEVEL = HIGH;
+const int DOWN_DIR_LEVEL = LOW;
+
+const unsigned long PULSE_WIDTH_US = 5;
+const unsigned long DIR_SETUP_US = 10;
+const unsigned long COMMAND_TIMEOUT_MS = 500;
+const unsigned long MIN_INTERVAL_US = 60;
+const unsigned long MAX_INTERVAL_US = 5000;
+
+// 500 pulses/sec initially; actual travel depends on the motor/mechanism.
+unsigned long stepIntervalUs = 2000;
+unsigned long lastStepUs = 0;
+unsigned long lastCommandMs = 0;
+bool running = false;
+bool currentMovingUp = true;
+
+void stopMotor() {
+  running = false;
+  digitalWrite(MOTOR_PUL_PIN, LOW);
+}
+
+void writeDirection(bool movingUp) {
+  digitalWrite(MOTOR_DIR_PIN, movingUp ? UP_DIR_LEVEL : DOWN_DIR_LEVEL);
+  currentMovingUp = movingUp;
+}
+
+void reportState() {
+  // Pin states only; these do not measure motor position or movement.
+  Serial.print(F("STATE Y_D8="));
+  Serial.print(digitalRead(MOTOR_DIR_PIN));
+  Serial.print(F(" RUNNING="));
+  Serial.println(running);
+}
+
+void startMotor(bool movingUp) {
+  if (!running || movingUp != currentMovingUp) {
+    stopMotor();
+    writeDirection(movingUp);
+    delayMicroseconds(DIR_SETUP_US);
+    lastStepUs = micros();
+  }
+  running = true;
+}
+
+void setup() {
+  // Preload levels before enabling output pins.
+  digitalWrite(MOTOR_PUL_PIN, LOW);
+  writeDirection(currentMovingUp);
+  pinMode(MOTOR_PUL_PIN, OUTPUT);
+  pinMode(MOTOR_DIR_PIN, OUTPUT);
+  Serial.begin(115200);
+  lastCommandMs = millis();
+}
+
+void loop() {
+  for (int i = 0; i < 16 && Serial.available(); ++i) {
+    char c = Serial.read();
+    switch (c) {
+      case 'u':
+        startMotor(true);
+        reportState();
+        break;
+      case 'j':
+        startMotor(false);
+        reportState();
+        break;
+      case 's':
+        stopMotor();
+        break;
+      case 'q':
+        stepIntervalUs = stepIntervalUs * 8 / 10;
+        if (stepIntervalUs < MIN_INTERVAL_US) stepIntervalUs = MIN_INTERVAL_US;
+        break;
+      case 'e':
+        stepIntervalUs = stepIntervalUs * 10 / 8;
+        if (stepIntervalUs > MAX_INTERVAL_US) stepIntervalUs = MAX_INTERVAL_US;
+        break;
+      case 'h':
+        break;  // Heartbeats never restart a stopped motor.
+      case '?':
+        Serial.println(F("AF434-Y-AXIS-v2"));
+        reportState();
+        continue;  // Queries must not keep motion alive.
+      default:
+        continue;
+    }
+    lastCommandMs = millis();
+  }
+
+  if (running && millis() - lastCommandMs >= COMMAND_TIMEOUT_MS) {
+    stopMotor();
+  }
+
+  unsigned long nowUs = micros();
+  if (running && nowUs - lastStepUs >= stepIntervalUs) {
+    lastStepUs = nowUs;
+    digitalWrite(MOTOR_PUL_PIN, HIGH);
+    delayMicroseconds(PULSE_WIDTH_US);
+    digitalWrite(MOTOR_PUL_PIN, LOW);
+  }
+}
