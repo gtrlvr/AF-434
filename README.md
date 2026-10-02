@@ -1,236 +1,177 @@
-# iCL42 X- and Y-axis control with an Arduino Mega 2560
+# AF-434 gantry control
 
-| Axis | Arduino source | Python keyboard control | Motors / keys |
-| --- | --- | --- | --- |
-| X | [x_axis_control.txt](x_axis_control.txt) | [keyboard_contro.py](keyboard_contro.py) | Two motors, A/D |
-| Y | [y_axis_control.txt](y_axis_control.txt) | [y_axis_keyboard.py](y_axis_keyboard.py) | One motor, Up/Down arrows |
+Keyboard jog control for a 3-axis gantry driven by four **Leadshine iCL42**
+integrated closed-loop steppers (driver and 14-bit encoder built into each
+motor) and an **Arduino Mega 2560**.
 
-`icl_control.txt` has been renamed to `x_axis_control.txt`. The existing
-X-axis direction mapping and firmware version remain the same.
-These are **separate, standalone sketches**. On a single Mega, uploading
-one replaces the other; they do not control both axes together. Separate
-Megas can run the two sketches independently, with different serial ports.
-
-## Y-axis single-motor control
-
-With power disconnected, wire the Y motor as follows. It uses the same
-D9/D8 pins as X-axis motor 1.
-
-| Y motor terminal | Connection |
+| File | What it is |
 | --- | --- |
-| PUL+ | Mega D9 |
-| DIR+ | Mega D8 |
-| PUL- and DIR- | Mega GND |
-| VCC / power + | External 24 V supply positive |
-| GND / power - | External supply negative |
-| ENA+, ENA-, ALM+, ALM-, RS232 | Leave disconnected |
+| [gantry_control/gantry_control.ino](gantry_control/gantry_control.ino) | Firmware for the Mega. Generates step pulses for all four motors with smooth acceleration and deceleration. |
+| [gantry_keyboard.py](gantry_keyboard.py) | Python keyboard controller. Talks to the Mega over USB serial. |
+| [requirements.txt](requirements.txt) | Python dependencies (`pyserial`, `pynput`). |
 
-Power the Mega by USB. Use the same motor settings and PUL/DIR input mode
-described below for X. Motor power goes to the external supply, never to
-the Mega's signal pins.
+## Axes and motors
 
-1. Paste `y_axis_control.txt` into a new Arduino sketch's `.ino` tab. Select
-   **Arduino Mega or Mega 2560**, select its port, and upload.
-2. Close Arduino Serial Monitor/Plotter.
-3. Install dependencies once with `python -m pip install -r requirements.txt`.
-4. Run `python y_axis_keyboard.py --port COM9` (replace COM9 if needed).
+| Axis | Keys | Motor | Position | Positive direction | Shaft rotation |
+| --- | --- | --- | --- | --- | --- |
+| X | W forward / S backward | 1 | left side | forward | forward = CW, backward = CCW |
+| X | W forward / S backward | 2 | right side, mounted mirrored | forward | forward = CCW, backward = CW |
+| Y | D right / A left | 3 | | right | right = CW, left = CCW |
+| Z | Q up / E down | 4 | | up | up = CCW, down = CW |
 
-Hold **Up** to move up or **Down** to move down; releasing the arrow stops
-the motor. If both are held, the last arrow pressed wins, and releasing it
-returns to the other held arrow. **Q** increases speed, **E** decreases it,
-and **Esc** stops and exits. Keyboard hooks work globally while the script runs.
-The motor starts at 500 pulses/sec. Python verifies `AF434-Y-AXIS-v2`
-before listening for keys, sends heartbeats every 100 ms, and the sketch
-stops pulsing after 500 ms without commands. A heartbeat cannot restart a
-stopped motor. Stop ends pulses and leaves the driver holding position.
-This sketch does not read end stops or measure position.
-
-Up sets DIR on D8 HIGH; Down sets it LOW. The physical direction depends on
-mounting and SW5. If Up moves down, swap `UP_DIR_LEVEL` and `DOWN_DIR_LEVEL`
-in `y_axis_control.txt` and upload again.
-
-## X-axis two-motor control
-
-For the current A/D failure investigation and measurement procedure, see
-[DIAGNOSTICS.md](DIAGNOSTICS.md).
-
-**Motor 1 is LEFT; motor 2 is RIGHT, mounted facing opposite ways.**
-Travel direction maps directly to each motor's own shaft direction:
-
-| Key | Travel | Motor 1 rotation | Motor 2 rotation |
-| --- | --- | --- | --- |
-| D | Forward | Forward | Backward |
-| A | Backward | Backward | Forward |
-
-Hold **A/D** to move and release to stop. **Q/E** changes their shared speed. **Esc** stops
-both and exits. When both direction keys are held, the last one pressed wins;
-releasing it returns to the other held direction.
+Motors 1 and 2 always receive identical pulse trains with opposite DIR
+levels, so the X gantry beam moves as one piece.
 
 ## Wiring
 
-The photographed motors are **Leadshine/Leisai iCL42-08 V2.0**. This wiring
-uses their PUL+/PUL-, DIR+/DIR- and ENA+/ENA- terminals and the **5 V Mega 2560**.
-Each motor already contains its driver and encoder. Use the terminal labels
-on your motors, rather than wire colors or an assumed connector orientation.
-Disconnect power before wiring.
+Disconnect all power before wiring. Follow the printed terminal labels on the
+motors, not wire colours. This is common-cathode wiring on the Mega's 5 V
+logic, the same arrangement that already worked for motors 1 and 2.
 
-| Connection | Motor 1 (LEFT) terminal | Motor 2 (RIGHT) terminal |
-| --- | --- | --- |
-| Mega D9 | PUL+ | — |
-| Mega D8 | DIR+ | — |
-| Mega D7 | — | PUL+ |
-| Mega D6 | — | DIR+ |
-| Mega GND | PUL- and DIR- | PUL- and DIR- |
-| External 24 V DC supply positive | VCC / power + | VCC / power + |
-| External supply negative | GND / power - | GND / power - |
-| Leave disconnected | ENA+, ENA-, ALM+, ALM-, RS232 | ENA+, ENA-, ALM+, ALM-, RS232 |
-
-Connect the two motors to the supply **in parallel**. The supply must be rated
-for their combined load; use your exact motor specifications to size it.
-24 V DC is within the V2.0 motor's specified supply range.
-Power the Mega from the computer's USB connection. **Do not connect motor
-24 V to the Mega's 5 V, VIN, barrel jack, or signal pins.**
-
-The PUL-/DIR- connections above are the signal return to the Mega's GND.
-The motor power GND connections go to the external supply negative. These
-are separate circuits through the motor's optically isolated signal inputs;
-this wiring does not require an extra link between supply negative and Mega
-GND. Keep signal wires short and away from motor power wiring.
-
-This is a common-cathode connection. Each Arduino output drives only one
-motor input, whose specified logic current is 7–16 mA. No extra signal
-resistor is specified for a 5 V controller. Do not apply this direct wiring
-to a 3.3 V board.
-
-## Motor settings
-
-Set both drivers to **the same pulses per revolution** before powering on.
-For 1600 pulses/revolution, the photographed V2.0 label and its manual list:
-
-| Switch | Both motors |
+| Mega pin | Motor terminal |
 | --- | --- |
-| SW1 | ON |
-| SW2 | OFF |
-| SW3 | ON |
-| SW4 | ON |
-| SW5 | Same direction setting on both motors |
-| SW6 | OFF (closed loop) |
+| D9 | Motor 1 PUL+ |
+| D8 | Motor 1 DIR+ |
+| D7 | Motor 2 PUL+ |
+| D6 | Motor 2 DIR+ |
+| D5 | Motor 3 PUL+ |
+| D4 | Motor 3 DIR+ |
+| D3 | Motor 4 PUL+ |
+| D2 | Motor 4 DIR+ |
+| D22 / D23 / D24 / D25 | ENA+ of motor 1 / 2 / 3 / 4 |
+| D26 / D27 / D28 / D29 | ALM+ of motor 1 / 2 / 3 / 4 |
+| GND | PUL-, DIR-, ENA- and ALM- of **all four** motors (16 wires; a small GND terminal strip tied to one Mega GND pin keeps this tidy) |
 
-Check these settings against the label/manual for your hardware revision.
-The V2.0 manual lists 1600 pulses/revolution as the factory setting.
-The older STEPPERONLINE series manual uses a different switch table:
-OFF/OFF/ON/ON is **3200**, rather than 1600, on your photographed motors.
-With 1600 selected, the sketch starts at 500 pulses/sec
-(about 18.75 RPM). Q/E adjusts this between about 200 and 16,667 pulses/sec.
-Start slowly and increase speed only as the load permits.
+| Motor terminal | Connection |
+| --- | --- |
+| VCC / power + | External 24 V DC supply positive (all four motors in parallel) |
+| GND / power - | External supply negative |
+| RS232 | Leave disconnected |
 
-The sketch configures each motor's rotation labels independently, then applies
-the travel mapping above explicitly. Motor 1 uses `HIGH` for forward and `LOW`
-for backward. Motor 2 now uses `HIGH` for forward and `LOW` for backward,
-reversing its v7 output after correcting the ENA wiring restored both motors
-but left their travel directions opposed. Verify the resulting travel after
-uploading v8. These labels refer to the mounting; an iCL42 has
-no universal forward travel direction. Verify the resulting physical motion.
-The electrical outputs are:
+ENA is held in the enabled state by the Mega, so the motors hold torque from
+power-up. Press F to free all four (shafts turn by hand) and N to enable them
+again. ALM is the driver's open-collector alarm output. If any driver raises
+it (over-current, following error, and so on) the Mega hard-stops every axis,
+prints `ALARM Mn`, and refuses motion until you fix the cause and press C.
 
-| Key | LEFT direction (Mega D8) | RIGHT direction (Mega D6) |
+- The Mega is powered from USB only. Never connect the 24 V supply to the
+  Mega's VIN, 5 V, barrel jack or any signal pin.
+- Size the 24 V supply for four motors running at once. Check the current
+  rating on your exact iCL42 variant.
+- The signal returns (PUL-/DIR-) go to Mega GND. The motor power returns go to
+  the supply negative. The motor inputs are opto-isolated, so no extra link
+  between the two grounds is needed. Keep signal wires short and away from the
+  motor power leads.
+- Several GND pins on the Mega are fine to use. If you run out, a small
+  terminal strip or breadboard rail tied to one Mega GND pin works.
+
+### Driver DIP switches
+
+Set every motor identically before powering on. For 1600 pulses/rev on the
+iCL42-08 V2.0 (the factory default): SW1 ON, SW2 OFF, SW3 ON, SW4 ON. SW5
+sets the default rotation direction and must be the same on all four. SW6 OFF
+selects closed loop. Confirm against the label on your motors; older iCL
+revisions use a different microstep table. The pulse input mode must be
+PUL/DIR, not CW/CCW.
+
+## Upload the firmware
+
+1. Open `gantry_control/gantry_control.ino` in the Arduino IDE.
+2. Tools > Board > **Arduino Mega or Mega 2560**, then pick its port.
+3. Upload. Close Serial Monitor afterwards so Python can open the port.
+
+## Run the keyboard controller
+
+```powershell
+python -m pip install -r requirements.txt
+python gantry_keyboard.py
+```
+
+The script finds the Mega's port by itself. If it cannot, use
+`python gantry_keyboard.py --list-ports` and then `--port COMx`.
+
+| Key | Action |
+| --- | --- |
+| W / S | X axis forward / backward |
+| A / D | Y axis left / right |
+| Q / E | Z axis up / down |
+| + / - | Jog speed up / down (x1.25 per press, 100 to 8000 steps/s) |
+| Space | Ramp every axis to a stop |
+| P | Print positions and velocities |
+| 0 | Zero the position counters (only while stopped) |
+| F / N | Free all motors (no holding torque) / enable them again |
+| C | Clear the alarm latch after fixing what tripped it |
+| Esc | Ramp every axis to a stop, then quit |
+
+Hold a key to move, release it to stop. Every start, stop and reversal is a
+velocity ramp, so nothing jerks. If both keys of one axis are held the most
+recent one wins, and releasing it hands control back to the other. All three
+axes can move at once. The keyboard hook is global: it also sees keys typed
+into other windows, so stop the script before typing elsewhere.
+
+Python sends a heartbeat every 100 ms. If the Mega hears nothing for 500 ms
+(cable unplugged, script crashed) it ramps every axis to a stop by itself.
+
+## Checking directions on first power-up
+
+The firmware assumes DIR HIGH = clockwise. That depends on SW5, so verify it
+with the gantry clear of obstacles and the speed turned down (press `-` a few
+times first):
+
+1. Tap W. Motor 1 should turn CW and motor 2 CCW, moving the X beam forward.
+2. Tap D. Motor 3 should turn CW, moving right.
+3. Tap Q. Motor 4 should turn CCW, moving up.
+
+If **every** motor runs backwards, swap `CW_LEVEL` and `CCW_LEVEL` near the
+top of the sketch. If only one motor or one axis is wrong, flip that motor's
+`Mx_POSITIVE_IS_CW` constant. Re-upload after either change. On this gantry
+the X pair needed flipping, so motors 1 and 2 are already set opposite to
+the table above in the sketch.
+
+Two more polarity checks, both visible before anything moves:
+
+- Right after power-up the shafts should resist being turned by hand. If they
+  spin freely, the ENA polarity is reversed: swap `ENA_ENABLED_LEVEL` and
+  `ENA_DISABLED_LEVEL`.
+- Press P. The status line should end with `ALARM= none`. If it lists every
+  motor while they are clearly fine, the ALM polarity is reversed: flip
+  `ALM_ACTIVE_LEVEL` between `HIGH` and `LOW`. On this gantry's motors the
+  correct value is `HIGH` (the ALM output conducts during normal operation).
+
+## Tuning
+
+All tuning lives at the top of the sketch:
+
+| Constant | Default | Meaning |
 | --- | --- | --- |
-| A (travel backward) | LOW | HIGH |
-| D (travel forward) | HIGH | LOW |
+| `DEFAULT_SPEED` | 1000 steps/s | Jog speed at power-up (37.5 RPM at 1600 pulses/rev) |
+| `MIN_SPEED` / `MAX_SPEED` | 100 / 8000 | Limits for the + and - keys |
+| `ACCEL` | 3000 steps/s² | Ramp rate. Lower = gentler, longer stops. 1000 steps/s stops in 0.33 s and 167 steps. |
+| `CRAWL_SPEED` | 150 steps/s | Final approach speed for go-to moves |
 
-SW5 also affects the motor's default direction.
-Compare shaft rotation using the same viewing convention for both motors.
-If a motor's own forward/backward labels are reversed, swap that motor's
-`MOTORx_FORWARD_DIR_LEVEL` and `MOTORx_BACKWARD_DIR_LEVEL` values and re-upload.
-If travel direction is reversed for both, swap the levels for both motors.
+## Serial protocol
 
-If either motor keeps rotating the same way when switching A/D, verify that
-motor's DIR+ wire reaches its assigned Mega pin (D8 for motor 1, D6 for
-motor 2), and that DIR- reaches Mega GND. Disconnect power before checking
-wiring. This firmware changes both DIR outputs when travel reverses.
+The Python script is a thin keyboard wrapper. Anything that can open a serial
+port at 115200 baud can drive the gantry with these commands.
 
-## Upload and run
+| Send | Effect |
+| --- | --- |
+| `w` `s` `d` `a` `q` `e` | Start jogging an axis (same meaning as the keys) |
+| `x` `y` `z` | Release that axis: ramp to a stop |
+| `+` `-` | Change jog speed. Replies `SPEED n` |
+| `S` | Ramp every axis to a stop |
+| `!` | Emergency stop, no ramp. Replies `ESTOP` |
+| `h` | Heartbeat. Send at least every 500 ms while moving |
+| `?` | Replies `AF434-GANTRY-v1` |
+| `p` | Replies `POS X=.. Y=.. Z=.. VEL X=.. Y=.. Z=.. SPEED=.. ENABLED=1 ALARM= none` |
+| `0` | Zero all positions. Replies `ZEROED` |
+| `N` / `F` | Enable all drivers / free them (F only while stopped). Replies `ENABLED` or `FREE` |
+| `C` | Clear the alarm latch. Replies `ALARM CLEARED` or `ALARM still active: Mn` |
+| `GX1600` + newline | Go to absolute step position on an axis (also `GY`, `GZ`, negatives allowed). Replies `GOTO X 1600`, then `DONE X` on arrival. Accelerates, cruises at the jog speed, and decelerates onto the target. |
 
-1. Open `diagnostics/firmware_v8/firmware_v8.ino` in Arduino IDE, or paste all
-   of `x_axis_control.txt` into a sketch's `.ino` tab. Select **Arduino Mega or
-   Mega 2560** and its port, then upload. The `.ino` export is a v8 snapshot;
-   regenerate it from `x_axis_control.txt` if the source changes.
-2. Close Arduino Serial Monitor/Plotter so Python can open the port.
-3. Set `PORT` in `keyboard_contro.py` to that port (currently `COM9`).
-4. In this project directory run:
-
-   ```powershell
-   python -m pip install -r requirements.txt
-   python keyboard_contro.py
-   ```
-
-Python checks for firmware `AF434-LR-DIR-v8` before starting keyboard control.
-It stops with an upload instruction if the Mega has an older sketch or does
-not respond. A successful start prints `Arduino firmware verified:
-AF434-LR-DIR-v8`. Updating the text file alone does not update the Mega;
-paste it into the Arduino sketch and upload again.
-
-If Python reports a firmware mismatch, it exits before listening for keys;
-A/D cannot control the motors until the uploaded sketch matches Python.
-During normal operation, pressing D prints `Travel forward command sent`,
-followed by an Arduino `STATE` line. With the default mapping, D reports
-`LEFT_D8=1 RIGHT_D6=0 ... RUNNING=1`; A reports `LEFT_D8=0 RIGHT_D6=1`.
-This confirms the sketch received a command and enabled pulse generation,
-not that the motor shafts moved.
-
-For direction diagnostics, run `python keyboard_contro.py --calibrate`.
-R flips the right motor's direction mapping and stops both motors; resetting
-the Mega restores the default. Keys 1/2 set the left DIR output LOW/HIGH,
-and 3/4 set the right DIR output LOW/HIGH without sending pulses. After a
-calibration command, release all A/D and calibration keys before moving again.
-
-If both motors reverse on A/D but travel in opposite directions, release
-A/D, press and release R, then try A/D again. If this fixes movement, save it
-by swapping `MOTOR2_FORWARD_DIR_LEVEL` and `MOTOR2_BACKWARD_DIR_LEVEL` in the
-sketch and re-uploading. `RIGHT_FLIPPED=1` reports a temporary change, which
-is lost when the Mega resets.
-
-If a motor does **not** reverse on A/D, use keys 1-4 to test its DIR wiring:
-
-| Key | Arduino output | Motion |
-| --- | --- | --- |
-| 1 | LEFT D8 LOW | Both stopped |
-| 2 | LEFT D8 HIGH | Both stopped |
-| 3 | RIGHT D6 LOW | Both stopped |
-| 4 | RIGHT D6 HIGH | Both stopped |
-
-These states remain set after key release. With a multimeter on DC volts,
-measure the selected Mega pin relative to Mega GND: LOW should be near 0 V,
-HIGH near 5 V. Then measure **DIR+ relative to DIR- at that motor**; it should
-change between the same levels. Both motors remain stopped in these tests.
-Restarting A/D restores the configured motion direction signals.
-
-For the right motor, trace **Mega D6 -> terminal 3 (DIR+)** and
-**Mega GND -> terminal 4 (DIR-)**. For the left motor, use D8 -> terminal 3
-and Mega GND -> terminal 4. Follow printed labels rather than wire colors.
-Disconnect power before correcting connections. Other main terminals are
-1=PUL+, 2=PUL-, 9=power GND, 10=power VCC.
-
-If D6 changes but the voltage across right DIR+/DIR- does not, check the
-wire, connection, and return path. If the motor's DIR voltage changes but
-rotation still does not, check that its configured pulse input mode is
-**PUL/DIR**, rather than **CW/CCW**. The V2.0 manual lists pulse input mode
-0=PUL/DIR and 1=CW/CCW. SW6 selects closed/open loop; it is not the pulse mode.
-If A/D is pressed while this guard is active, Python prints `Motion blocked
-by calibration` and sends no motion command.
-
-The script listens to keys globally, including while other windows have
-focus. Both motors receive one pulse per step; their edges are separated by
-a few microseconds from sequential GPIO writes. Identical microstep settings
-give the same commanded angular distance, but the Arduino does not read encoder
-positions or motor alarms.
-
-Python sends a heartbeat every 100 ms. The sketch stops pulsing both motors
-after 500 ms without a valid command, and Python sends a stop on exit.
-A heartbeat alone never restarts motion after a timeout: release and press
-A/D again. Stopping pulses leaves the drivers enabled and holding position.
-
-Sources: [Leadshine/Leisai iCL42-08 V2.0 manual](https://www.leisaishop.com/uploadfiles/iCL42-08%20(V2.0)%E4%B8%80%E4%BD%93%E5%BC%8F%E9%97%AD%E7%8E%AF%E6%AD%A5%E8%BF%9B%E7%94%B5%E6%9C%BA%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6%20V1.00.pdf),
-[older STEPPERONLINE series manual](https://www.slideshare.net/slideshow/iclseries-closed-stepper-motor-manualpdf/262787142),
-[iCL42-08 specifications](https://www.omc-stepperonline.com/icl-series-nema-17-integrated-closed-loop-stepper-motor-0-8nm-113-29oz-in-20-36vdc-w-14-bit-encoder-icl42-08),
-and [Arduino Mega 2560 pinout](https://docs.arduino.cc/resources/pinouts/A000067-full-pinout.pdf).
+The Mega prints `STOPPED` whenever all axes come to rest and `ALARM Mn` the
+moment a driver faults. Positions are counted from commanded steps, not read
+back from the encoders. The iCL42 closes its own loop internally; the Mega
+does not read the encoder or the RS232 port. Freeing the motors with F and
+moving them by hand makes the step count wrong, so press 0 at a known spot
+afterwards.
